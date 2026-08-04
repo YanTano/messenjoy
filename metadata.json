@@ -1,0 +1,6 @@
+{
+  "name": "Messenjoy",
+  "description": "A modern, full-featured chat messenger with real-time messages, AI assistants, smart replies, voice notes, media sharing, and video call simulation.",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
