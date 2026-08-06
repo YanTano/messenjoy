@@ -2,10 +2,11 @@ import {
   collection,
   doc,
   setDoc,
+  deleteDoc,
   onSnapshot,
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { UserAccount, getRegisteredAccounts, saveRegisteredAccounts } from './auth';
+import { UserAccount, saveRegisteredAccounts } from './auth';
 import { Message } from '../types';
 
 /**
@@ -32,6 +33,18 @@ export async function syncUserToFirestore(user: UserAccount) {
     );
   } catch (e) {
     console.error('Error syncing user to Firestore:', e);
+  }
+}
+/**
+ * Delete User Account from Firestore Cloud DB
+ */
+export async function deleteUserFromFirestore(userId: string) {
+  if (!userId) return;
+  try {
+    const userRef = doc(db, 'users', userId);
+    await deleteDoc(userRef);
+  } catch (e) {
+    console.error('Error deleting user from Firestore:', e);
   }
 }
 
@@ -61,18 +74,11 @@ export function subscribeToFirestoreUsers(onUsersUpdated: (users: UserAccount[])
           }
         });
 
-        if (firestoreUsers.length > 0) {
-          const localAccounts = getRegisteredAccounts();
-          const accountMap = new Map<string, UserAccount>();
+        // Save current active list from Firestore into local accounts
+        // This ensures deleted users in Firestore are removed locally as well
+        saveRegisteredAccounts(firestoreUsers);
+        onUsersUpdated(firestoreUsers);
 
-          // Merge local & remote users
-          localAccounts.forEach((acc) => accountMap.set(acc.id, acc));
-          firestoreUsers.forEach((acc) => accountMap.set(acc.id, acc));
-
-          const merged = Array.from(accountMap.values());
-          saveRegisteredAccounts(merged);
-          onUsersUpdated(merged);
-        }
       },
       (error) => {
         console.error('Firestore users snapshot error:', error);
@@ -117,6 +123,19 @@ export async function syncMessageToFirestore(message: Message) {
 }
 
 /**
+ * Delete Message from Firestore Cloud DB
+ */
+export async function deleteMessageFromFirestore(messageId: string) {
+  if (!messageId) return;
+  try {
+    const msgRef = doc(db, 'messages', messageId);
+    await deleteDoc(msgRef);
+  } catch (e) {
+    console.error('Error deleting message from Firestore:', e);
+  }
+}
+
+/**
  * 4. Subscribe to Real-Time Messages from Firestore across all browsers/devices
  */
 export function subscribeToFirestoreMessages(onMessagesUpdated: (messages: Message[]) => void) {
@@ -148,7 +167,7 @@ export function subscribeToFirestoreMessages(onMessagesUpdated: (messages: Messa
             });
           }
         });
-        if (messagesList.length > 0) {
+        // Always emit current snapshot (including empty array if all messages are deleted)
           onMessagesUpdated(messagesList);
         }
       },
@@ -161,3 +180,4 @@ export function subscribeToFirestoreMessages(onMessagesUpdated: (messages: Messa
     return () => {};
   }
 }
+
