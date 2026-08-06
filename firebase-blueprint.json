@@ -1,0 +1,32 @@
+{
+  "entities": {
+    "users": {
+      "title": "User",
+      "description": "Registered user profiles for multi-browser search and chat",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": "string" },
+        "avatar": { "type": "string" },
+        "status": { "type": "string" },
+        "about": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["uid", "name"]
+    },
+    "messages": {
+      "title": "Message",
+      "description": "Shared real-time messages between users",
+      "type": "object",
+      "properties": {
+        "chatId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "text": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "attachments": { "type": "array" }
+      },
+      "required": ["chatId", "text", "timestamp"]
+    }
+  }
+}
