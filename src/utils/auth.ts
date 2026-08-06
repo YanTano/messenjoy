@@ -138,3 +138,12 @@ export function loginUser(
 export function logoutUser(): void {
   setCurrentSessionUser(null);
 }
+
+export function deleteUserAccount(userId: string): void {
+  const accounts = getRegisteredAccounts();
+  const updated = accounts.filter((a) => a.id !== userId);
+  saveRegisteredAccounts(updated);
+  if (getCurrentSessionUser()?.id === userId) {
+    setCurrentSessionUser(null);
+  }
+}
