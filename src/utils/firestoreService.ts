@@ -169,7 +169,6 @@ export function subscribeToFirestoreMessages(onMessagesUpdated: (messages: Messa
         });
         // Always emit current snapshot (including empty array if all messages are deleted)
           onMessagesUpdated(messagesList);
-        }
       },
       (error) => {
         console.error('Firestore messages snapshot error:', error);
