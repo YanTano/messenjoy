@@ -26,6 +26,12 @@ import { NewChatModal } from './components/NewChatModal';
 import { SettingsModal } from './components/SettingsModal';
 import { AuthModal } from './components/AuthModal';
 import { sounds } from './utils/audio';
+import {
+  syncUserToFirestore,
+  subscribeToFirestoreUsers,
+  syncMessageToFirestore,
+  subscribeToFirestoreMessages,
+} from './utils/firestoreService';
 
 // Helper to compute a shared conversation key for 1-on-1 user chats
 function getConversationKey(currentUserId: string | undefined, contactId: string): string {
@@ -206,6 +212,73 @@ export default function App() {
     }
   }, [settings]);
 
+  // Firestore User Profile Sync
+  useEffect(() => {
+    if (currentUser) {
+      syncUserToFirestore(currentUser);
+    }
+  }, [currentUser]);
+
+  // Firestore Real-Time Users Listener (Multi-Browser Search & Contacts)
+  useEffect(() => {
+    const unsubscribeUsers = subscribeToFirestoreUsers(() => {
+      setContacts(getCombinedContacts(currentUser, messagesMap));
+    });
+    return () => unsubscribeUsers();
+  }, [currentUser, messagesMap]);
+
+  // Firestore Real-Time Messages Listener (Multi-Browser Chat)
+  useEffect(() => {
+    const unsubscribeMsgs = subscribeToFirestoreMessages((remoteMessages) => {
+      if (!remoteMessages || remoteMessages.length === 0) return;
+
+      setMessagesMap((prev) => {
+        let changed = false;
+        const next = { ...prev };
+
+        remoteMessages.forEach((msg) => {
+          const chatId = msg.chatId;
+          const currentMsgs = next[chatId] || [];
+
+          if (!currentMsgs.some((m) => m.id === msg.id)) {
+            changed = true;
+            const isSentByMe = currentUser ? msg.senderId === currentUser.id : false;
+            const formattedMsg: Message = {
+              ...msg,
+              isUser: isSentByMe,
+            };
+
+            const updatedMsgs = [...currentMsgs, formattedMsg].sort(
+              (a, b) => (a.createdAt || 0) - (b.createdAt || 0)
+            );
+
+            next[chatId] = updatedMsgs;
+
+            if (msg.senderId && currentUser && msg.senderId !== currentUser.id) {
+              next[msg.senderId] = updatedMsgs;
+            }
+
+            if (currentUser && msg.senderId && msg.senderId !== currentUser.id && !isSentByMe) {
+              sounds.playReceived();
+              setIncomingNotification({
+                id: msg.id,
+                senderName: msg.senderName || 'User',
+                senderAvatar:
+                  msg.senderAvatar ||
+                  'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
+                text: msg.text || 'Sent an attachment',
+                contactId: msg.senderId,
+              });
+            }
+          }
+        });
+
+        return changed ? next : prev;
+      });
+    });
+
+    return () => unsubscribeMsgs();
+  }, [currentUser]);
   // Multi-tab LocalStorage listener
   useEffect(() => {
     const handleStorage = (e: StorageEvent) => {
@@ -501,15 +574,17 @@ export default function App() {
       hour: '2-digit',
       minute: '2-digit',
     });
-
+    const convKey = getConversationKey(currentUser.id, activeContactId);
+    
     const newMsg: Message = {
       id: 'msg_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
-      chatId: activeContactId,
+      chatId: convKey,
       senderId: currentUser.id,
       senderName: currentUser.name,
       senderAvatar: currentUser.avatar,
       text,
       timestamp: timeString,
+      createdAt: Date.now(),
       isUser: true,
       status: 'sent',
       replyToText: replyingTo ? replyingTo.text : undefined,
@@ -522,7 +597,8 @@ export default function App() {
     sounds.playSent();
     setReplyingTo(null);
 
-    const convKey = getConversationKey(currentUser.id, activeContactId);
+    // Sync user message to Firestore Cloud DB for multi-browser real-time messaging
+    syncMessageToFirestore(newMsg);
 
     // Append user message
     setMessagesMap((prev) => {
@@ -596,6 +672,7 @@ export default function App() {
         };
 
         sounds.playReceived();
+        syncMessageToFirestore(aiMsg);
 
         setMessagesMap((prev) => {
           const currentMsgs = prev[activeContactId] || [];
