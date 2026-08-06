@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   X,
   Phone,
@@ -11,6 +11,8 @@ import {
   Image as ImageIcon,
   FileText,
   Lock,
+  Trash2,
+  AlertTriangle,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Contact, Message } from '../types';
@@ -22,6 +24,7 @@ interface ContactInfoModalProps {
   onClose: () => void;
   onStartCall: (type: 'audio' | 'video') => void;
   onViewMedia: (url: string) => void;
+  onDeleteContact?: (contactId: string) => void;
 }
 
 export const ContactInfoModal: React.FC<ContactInfoModalProps> = ({
@@ -31,7 +34,10 @@ export const ContactInfoModal: React.FC<ContactInfoModalProps> = ({
   onClose,
   onStartCall,
   onViewMedia,
+  onDeleteContact,
 }) => {
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  
   if (!isOpen || !contact) return null;
 
   const safeMessages = messages || [];
@@ -171,7 +177,7 @@ export const ContactInfoModal: React.FC<ContactInfoModalProps> = ({
           </div>
 
           {/* Shared Files Section */}
-          <div className="p-5">
+          <div className="p-5 border-b border-zinc-200 dark:border-zinc-800">
             <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider flex items-center gap-1.5 mb-3">
               <FileText className="w-4 h-4 text-amber-500" />
               <span>Shared Documents ({fileItems.length})</span>
@@ -193,6 +199,48 @@ export const ContactInfoModal: React.FC<ContactInfoModalProps> = ({
               <p className="text-xs text-zinc-400 italic">No shared documents yet.</p>
             )}
           </div>
+          
+          {/* Delete Contact Section */}
+          {!contact.isAI && onDeleteContact && (
+            <div className="p-5">
+              {!confirmDelete ? (
+                <button
+                  onClick={() => setConfirmDelete(true)}
+                  className="w-full py-2.5 bg-red-50 dark:bg-red-950/40 hover:bg-red-100 dark:hover:bg-red-900/60 text-red-600 dark:text-red-400 text-xs font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Delete Contact / User</span>
+                </button>
+              ) : (
+                <div className="p-3.5 bg-red-100/80 dark:bg-red-950/80 border border-red-300 dark:border-red-800 rounded-xl space-y-2">
+                  <div className="flex items-center gap-2 text-red-700 dark:text-red-300 text-xs font-bold">
+                    <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                    <span>Delete {contact.name}?</span>
+                  </div>
+                  <p className="text-[11px] text-red-600 dark:text-red-300 leading-snug">
+                    This will remove this user and delete their user profile/messages from Firestore.
+                  </p>
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      onClick={() => setConfirmDelete(false)}
+                      className="flex-1 py-1.5 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 text-xs font-medium rounded-lg border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => {
+                        onClose();
+                        onDeleteContact(contact.id);
+                      }}
+                      className="flex-1 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg transition-colors shadow-xs"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </motion.div>
       </div>
     </AnimatePresence>
