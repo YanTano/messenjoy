@@ -1,5 +1,5 @@
-import React from 'react';
-import { X, Moon, Sun, Volume2, VolumeX, Sparkles, Image, CornerDownLeft, LogOut, User } from 'lucide-react';
+import React, { useState } from 'react';
+import { X, Moon, Sun, Volume2, VolumeX, Sparkles, Image, CornerDownLeft, LogOut, Trash2, AlertTriangle } from 'lucide-react';
 import { motion } from 'motion/react';
 import { ThemeSettings } from '../types';
 
@@ -9,6 +9,7 @@ interface SettingsModalProps {
   onClose: () => void;
   onUpdateSettings: (newSettings: Partial<ThemeSettings>) => void;
   onLogout?: () => void;
+  onDeleteAccount?: () => void;
   currentUser?: {
     name: string;
     email?: string;
@@ -30,8 +31,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onClose,
   onUpdateSettings,
   onLogout,
+  onDeleteAccount,
   currentUser,
 }) => {
+  const [showConfirmDelete, setShowConfirmDelete] = useState(false);
+  
   if (!isOpen) return null;
 
   return (
@@ -59,7 +63,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         <div className="p-5 space-y-6 overflow-y-auto max-h-[70vh]">
           {/* Active User Account Info */}
           {currentUser && (
-            <div className="p-3.5 bg-zinc-50 dark:bg-zinc-950 rounded-xl border border-zinc-200/80 dark:border-zinc-800 flex items-center justify-between">
+            <div className="p-3.5 bg-zinc-50 dark:bg-zinc-950 rounded-xl border border-zinc-200/80 dark:border-zinc-800 space-y-3">
+              <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <img
                   src={currentUser.avatar}
@@ -82,11 +87,54 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     onClose();
                     onLogout();
                   }}
-                  className="px-3 py-1.5 bg-red-50 dark:bg-red-950/60 hover:bg-red-100 dark:hover:bg-red-900/60 text-red-600 dark:text-red-400 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5"
-                >
+                   className="px-3 py-1.5 bg-zinc-200/70 hover:bg-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5"
+                  >
                   <LogOut className="w-3.5 h-3.5" />
                   <span>Log Out</span>
                 </button>
+               )}
+              </div>
+
+              {/* Delete Account button & inline confirmation */}
+              {onDeleteAccount && (
+                <div className="pt-2 border-t border-zinc-200/60 dark:border-zinc-800">
+                  {!showConfirmDelete ? (
+                    <button
+                      onClick={() => setShowConfirmDelete(true)}
+                      className="w-full py-2 bg-red-50 dark:bg-red-950/40 hover:bg-red-100 dark:hover:bg-red-900/60 text-red-600 dark:text-red-400 text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-1.5"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Delete My Account</span>
+                    </button>
+                  ) : (
+                    <div className="p-3 bg-red-100/80 dark:bg-red-950/80 border border-red-300 dark:border-red-800 rounded-xl space-y-2">
+                      <div className="flex items-center gap-2 text-red-700 dark:text-red-300 text-xs font-bold">
+                        <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                        <span>Permanently Delete Account?</span>
+                      </div>
+                      <p className="text-[11px] text-red-600 dark:text-red-300 leading-snug">
+                        This will delete your user profile and remove your data from Firestore.
+                      </p>
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          onClick={() => setShowConfirmDelete(false)}
+                          className="flex-1 py-1.5 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 text-xs font-medium rounded-lg border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={() => {
+                            onClose();
+                            onDeleteAccount();
+                          }}
+                          className="flex-1 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg transition-colors shadow-xs"
+                        >
+                          Confirm Delete
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           )}
