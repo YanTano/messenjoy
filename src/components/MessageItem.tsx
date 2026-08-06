@@ -286,15 +286,14 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                 <Copy className="w-4 h-4" />
               </button>
 
-              {message.isUser && (
                 <button
                   onClick={() => onDelete(message.id)}
                   className="p-1.5 hover:bg-red-50 dark:hover:bg-red-950/50 rounded-full text-red-500 transition-colors"
-                  title="Delete"
+                  title="Delete Message"
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
-              )}
+
             </motion.div>
           )}
 
