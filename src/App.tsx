@@ -29,8 +29,10 @@ import { AuthModal } from './components/AuthModal';
 import { sounds } from './utils/audio';
 import {
   syncUserToFirestore,
+  deleteUserFromFirestore,
   subscribeToFirestoreUsers,
   syncMessageToFirestore,
+  deleteMessageFromFirestore,
   subscribeToFirestoreMessages,
 } from './utils/firestoreService';
 
@@ -69,6 +71,18 @@ export default function App() {
       }
     }
     return INITIAL_MESSAGES;
+  });
+  
+  // Track explicitly started chats (so new registered users are searchable and don't auto-clutter sidebar)
+  const [startedChatIds, setStartedChatIds] = useState<string[]>(() => {
+    const saved = localStorage.getItem('messenger_started_chats_v2');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) {}
+    }
+    return [];
   });
 
   // Helper to load contacts dynamically from AI bots + registered users & resolve last messages from messagesMap
@@ -133,13 +147,25 @@ export default function App() {
     });
   };
 
-  const [contacts, setContacts] = useState<Contact[]>(() =>
+  const [allContacts, setAllContacts] = useState<Contact[]>(() =>
     getCombinedContacts(currentUser, messagesMap)
   );
 
   const [activeContactId, setActiveContactId] = useState<string | null>('ai_gemini');
   const [activeFilter, setActiveFilter] = useState<ChatFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
+
+   // Sidebar active contacts list: AI bots, Groups, contacts with messages, or explicitly started chats
+  const sidebarContacts = allContacts.filter((c) => {
+    if (c.isAI || c.isGroup) return true;
+    if (c.id === activeContactId) return true;
+    if (startedChatIds.includes(c.id)) return true;
+
+    // Check if conversation has messages
+    const convKey = getConversationKey(currentUser?.id, c.id);
+    const msgs = messagesMap[convKey] || messagesMap[c.id] || [];
+    return msgs.length > 0;
+  });
 
   // Settings
   const [settings, setSettings] = useState<ThemeSettings>(() => {
@@ -190,13 +216,13 @@ export default function App() {
 
   // Sync contacts whenever currentUser or messagesMap changes
   useEffect(() => {
-    setContacts(getCombinedContacts(currentUser, messagesMap));
+    setAllContacts(getCombinedContacts(currentUser, messagesMap));
   }, [currentUser, messagesMap]);
 
   // Save state to localStorage whenever contacts, messages, settings change
   useEffect(() => {
-    localStorage.setItem('messenger_contacts_v2', JSON.stringify(contacts));
-  }, [contacts]);
+    localStorage.setItem('messenger_contacts_v2', JSON.stringify(allContacts));
+  }, [allContacts]);
 
   useEffect(() => {
     localStorage.setItem('messenger_messages_v2', JSON.stringify(messagesMap));
@@ -223,43 +249,37 @@ export default function App() {
   // Firestore Real-Time Users Listener (Multi-Browser Search & Contacts)
   useEffect(() => {
     const unsubscribeUsers = subscribeToFirestoreUsers(() => {
-      setContacts(getCombinedContacts(currentUser, messagesMap));
+      setAllContacts(getCombinedContacts(currentUser, messagesMap));
     });
     return () => unsubscribeUsers();
   }, [currentUser, messagesMap]);
 
-  // Firestore Real-Time Messages Listener (Multi-Browser Chat)
+  // Firestore Real-Time Messages Listener (Multi-Browser Chat with Deletion Sync)
   useEffect(() => {
     const unsubscribeMsgs = subscribeToFirestoreMessages((remoteMessages) => {
-      if (!remoteMessages || remoteMessages.length === 0) return;
 
       setMessagesMap((prev) => {
-        let changed = false;
         const next = { ...prev };
+        const remoteIdsSet = new Set(remoteMessages.map((m) => m.id));
+        const msgsByChatId: Record<string, Message[]> = {};
 
         remoteMessages.forEach((msg) => {
           const chatId = msg.chatId;
-          const currentMsgs = next[chatId] || [];
-
-          if (!currentMsgs.some((m) => m.id === msg.id)) {
-            changed = true;
             const isSentByMe = currentUser ? msg.senderId === currentUser.id : false;
             const formattedMsg: Message = {
               ...msg,
               isUser: isSentByMe,
             };
-
-            const updatedMsgs = [...currentMsgs, formattedMsg].sort(
-              (a, b) => (a.createdAt || 0) - (b.createdAt || 0)
-            );
-
-            next[chatId] = updatedMsgs;
-
-            if (msg.senderId && currentUser && msg.senderId !== currentUser.id) {
-              next[msg.senderId] = updatedMsgs;
+          
+            if (!msgsByChatId[chatId]) {
+              msgsByChatId[chatId] = [];
             }
+              msgsByChatId[chatId].push(formattedMsg);
+           
 
             if (currentUser && msg.senderId && msg.senderId !== currentUser.id && !isSentByMe) {
+              const prevMsgs = prev[chatId] || [];
+              if (!prevMsgs.some((m) => m.id === msg.id)) {
               sounds.playReceived();
               setIncomingNotification({
                 id: msg.id,
@@ -274,7 +294,27 @@ export default function App() {
           }
         });
 
-        return changed ? next : prev;
+        // 1. For chats present in remoteMessages, merge/update
+        Object.keys(msgsByChatId).forEach((chatId) => {
+          const list = msgsByChatId[chatId].sort(
+            (a, b) => (a.createdAt || 0) - (b.createdAt || 0)
+          );
+          next[chatId] = list;
+        });
+
+        // 2. For chats in local prev state, purge any msg_ that is no longer in remoteIdsSet (deleted in Firestore)
+        Object.keys(prev).forEach((chatId) => {
+          const existing = prev[chatId] || [];
+          const filtered = existing.filter((m) => {
+            if (m.id.startsWith('msg_')) {
+              return remoteIdsSet.has(m.id);
+            }
+            return true;
+          });
+          next[chatId] = filtered;
+        });
+
+        return next;
       });
     });
 
@@ -289,7 +329,7 @@ export default function App() {
           setMessagesMap((prev) => ({ ...prev, ...parsed }));
         } catch (err) {}
       } else if (e.key === 'messenger_contacts_v2' && e.newValue) {
-        setContacts(getCombinedContacts(currentUser, messagesMap));
+        setAllContacts(getCombinedContacts(currentUser, messagesMap));
       }
     };
     window.addEventListener('storage', handleStorage);
@@ -327,7 +367,7 @@ export default function App() {
 
           // Update contacts & unread count if received from someone else
           if (recipientId === currentUser.id && senderId) {
-            setContacts((prev) => {
+            setAllContacts((prev) => {
               const exists = prev.some((c) => c.id === senderId);
               if (!exists) {
                 const regAccounts = getRegisteredAccounts();
@@ -393,7 +433,7 @@ export default function App() {
         }
       } else if (payload.type === 'USER_REGISTERED') {
         // Refresh contact list with newly registered users
-        setContacts(getCombinedContacts(currentUser, messagesMap));
+        setAllContacts(getCombinedContacts(currentUser, messagesMap));
       }
     });
 
@@ -426,7 +466,7 @@ export default function App() {
     };
   }, [callState.active]);
 
-  const activeContact = contacts.find((c) => c.id === activeContactId) || null;
+  const activeContact = allContacts.find((c) => c.id === activeContactId) || null;
 
   // Active Messages resolution
   const getActiveMessages = (): Message[] => {
@@ -542,8 +582,14 @@ export default function App() {
     setReplyingTo(null);
     setShowMobileSidebar(false);
 
+    if (!startedChatIds.includes(id)) {
+      const updated = [...startedChatIds, id];
+      setStartedChatIds(updated);
+      localStorage.setItem('messenger_started_chats_v2', JSON.stringify(updated));
+    }
+    
     // Clear unread count
-    setContacts((prev) =>
+    setAllContacts((prev) =>
       prev.map((c) => (c.id === id ? { ...c, unreadCount: 0 } : c))
     );
   };
@@ -551,7 +597,7 @@ export default function App() {
   // Typing event handler
   const handleUserTyping = (isTyping: boolean) => {
     if (!activeContactId || !currentUser) return;
-    const contact = contacts.find((c) => c.id === activeContactId);
+    const contact = allContacts.find((c) => c.id === activeContactId);
     if (contact && !contact.isAI) {
       syncEngine.broadcast({
         type: 'TYPING',
@@ -613,7 +659,7 @@ export default function App() {
     });
 
     // Update contact's last message
-    setContacts((prev) =>
+    setAllContacts((prev) =>
       prev.map((c) =>
         c.id === activeContactId
           ? {
@@ -625,7 +671,7 @@ export default function App() {
       )
     );
 
-    const contact = contacts.find((c) => c.id === activeContactId);
+    const contact = allContacts.find((c) => c.id === activeContactId);
     if (!contact) return;
 
     // AI Response Handling
@@ -683,7 +729,7 @@ export default function App() {
           };
         });
 
-        setContacts((prev) =>
+        setAllContacts((prev) =>
           prev.map((c) =>
             c.id === activeContactId
               ? { ...c, lastMessage: replyText, lastMessageTime: aiMsg.timestamp }
@@ -767,17 +813,71 @@ export default function App() {
     });
   };
 
-  const handleDeleteMessage = (msgId: string) => {
-    if (!activeContactId || !currentUser) return;
-    const convKey = getConversationKey(currentUser.id, activeContactId);
+  const handleDeleteMessage = async (msgId: string) => {
+    // 1. Delete from Firestore Cloud DB
+    await deleteMessageFromFirestore(msgId);
 
+    // 2. Delete from local state across all keys
     setMessagesMap((prev) => {
-      const msgs = prev[convKey] || prev[activeContactId] || [];
-      const updated = msgs.filter((m) => m.id !== msgId);
-      return { ...prev, [activeContactId]: updated, [convKey]: updated };
+      const next = { ...prev };
+      Object.keys(next).forEach((chatId) => {
+        next[chatId] = next[chatId].filter((m) => m.id !== msgId);
+      });
+      return next;
     });
   };
 
+  
+  const handleDeleteAccount = async () => {
+    if (!currentUser) return;
+    const userId = currentUser.id;
+
+    // 1. Delete from Firestore
+    await deleteUserFromFirestore(userId);
+
+    // 2. Delete from local storage accounts
+    deleteUserAccount(userId);
+
+    // 3. Clear session
+    setCurrentUser(null);
+    logoutUser();
+    setIsAuthModalOpen(true);
+  };
+
+  const handleDeleteContact = async (contactId: string) => {
+    // 1. Delete user from Firestore
+    await deleteUserFromFirestore(contactId);
+
+    // 2. Delete from local storage accounts
+    deleteUserAccount(contactId);
+
+    // 3. Remove from startedChatIds
+    setStartedChatIds((prev) => {
+      const updated = prev.filter((id) => id !== contactId);
+      localStorage.setItem('messenger_started_chats_v2', JSON.stringify(updated));
+      return updated;
+    });
+
+    // 4. Clean up messages for this contact
+    setMessagesMap((prev) => {
+      const next = { ...prev };
+      delete next[contactId];
+      if (currentUser) {
+        const convKey = getConversationKey(currentUser.id, contactId);
+        delete next[convKey];
+      }
+      return next;
+    });
+
+    // 5. Reset active contact if deleted user was selected
+    if (activeContactId === contactId) {
+      setActiveContactId('ai_gemini');
+    }
+
+    // 6. Refresh all contacts
+    setAllContacts(getCombinedContacts(currentUser, messagesMap));
+  };
+  
   // Calls
   const handleStartCall = (type: 'audio' | 'video') => {
     if (!activeContact) return;
@@ -820,7 +920,7 @@ export default function App() {
       lastMessageTime: 'Just now',
     };
 
-    setContacts((prev) => [newGroup, ...prev]);
+    setAllContacts((prev) => [newGroup, ...prev]);
     setActiveContactId(newGroup.id);
   };
 
@@ -841,7 +941,7 @@ export default function App() {
       lastMessageTime: 'Just now',
     };
 
-    setContacts((prev) => [newBot, ...prev]);
+    setAllContacts((prev) => [newBot, ...prev]);
     setActiveContactId(newBot.id);
   };
 
@@ -875,7 +975,7 @@ export default function App() {
         } sm:flex w-full sm:w-80 md:w-96 h-full flex-shrink-0 z-20`}
       >
         <Sidebar
-          contacts={contacts}
+          contacts={sidebarContacts}
           activeContactId={activeContactId}
           activeFilter={activeFilter}
           searchQuery={searchQuery}
@@ -940,12 +1040,13 @@ export default function App() {
         onClose={() => setIsContactInfoOpen(false)}
         onStartCall={handleStartCall}
         onViewMedia={(url) => setMediaPreviewUrl(url)}
+        onDeleteContact={handleDeleteContact}
       />
 
       {/* New Conversation / AI Bot Modal */}
       <NewChatModal
         isOpen={isNewChatOpen}
-        contacts={contacts}
+        contacts={allContacts}
         onClose={() => setIsNewChatOpen(false)}
         onSelectContact={handleSelectContact}
         onCreateGroup={handleCreateGroup}
@@ -961,6 +1062,7 @@ export default function App() {
           setSettings((prev) => ({ ...prev, ...newSettings }))
         }
         onLogout={handleLogout}
+        onDeleteAccount={handleDeleteAccount}
         currentUser={currentUser || undefined}
       />
 
