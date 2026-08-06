@@ -13,6 +13,7 @@ import {
   getCurrentSessionUser,
   getRegisteredAccounts,
   logoutUser,
+  deleteUserAccount,
 } from './utils/auth';
 import { syncEngine, SyncMessagePayload } from './utils/syncChannel';
 import { AI_CONTACTS, accountToContact, INITIAL_MESSAGES } from './data/initialData';
