@@ -375,6 +375,30 @@ export default function App() {
 
   const activeMessages = getActiveMessages();
 
+  // Helper to generate contextual AI responses locally for instant offline/GitHub Pages compatibility
+  const getContextualAiFallback = (botName: string, text: string): string => {
+    const lower = (text || '').toLowerCase();
+    if (lower.includes('hello') || lower.includes('hi') || lower.includes('hey')) {
+      return `Hello! I'm ${botName}. Wonderful to chat with you today! How can I help?`;
+    }
+    if (lower.includes('how are you') || lower.includes('how is it going')) {
+      return `I'm doing great, thank you for asking! How has your day been?`;
+    }
+    if (lower.includes('help') || lower.includes('what can you do') || lower.includes('who are you')) {
+      return `I'm ${botName}, your AI assistant. I can chat with you, answer questions, brainstorm ideas, and share helpful suggestions!`;
+    }
+    if (lower.includes('thanks') || lower.includes('thank you')) {
+      return `You're very welcome! Let me know if you need anything else.`;
+    }
+    const variations = [
+      `That's a great point regarding "${text}". Tell me more about what you're thinking!`,
+      `I really like that perspective! What steps are you considering next?`,
+      `Thanks for sharing that! Let me know how I can assist you further with this.`,
+    ];
+    return variations[Math.floor(Math.random() * variations.length)];
+  };
+
+
   // Helper to generate contextual smart replies locally for instant zero-latency feedback
   const getContextualFallbackReplies = (text: string): string[] => {
     const lower = (text || '').toLowerCase();
@@ -530,7 +554,7 @@ export default function App() {
     // AI Response Handling
     if (contact.isAI) {
       setTypingMap((prev) => ({ ...prev, [activeContactId]: true }));
-
+      let replyText = '';
       try {
         const history = getActiveMessages().map((m) => ({
           isUser: m.isUser,
@@ -547,10 +571,15 @@ export default function App() {
             botName: contact.name,
           }),
         });
-
+        if (res.ok) {
         const data = await res.json();
-        const replyText = data.replyText || "I'm sorry, I couldn't generate a response.";
-
+          replyText = data.replyText || getContextualAiFallback(contact.name, text);
+        } else {
+          replyText = getContextualAiFallback(contact.name, text);
+        }
+      } catch (err) {
+        replyText = getContextualAiFallback(contact.name, text);
+      } finally {
         const aiMsg: Message = {
           id: 'msg_ai_' + Date.now(),
           chatId: activeContactId,
@@ -583,9 +612,7 @@ export default function App() {
               : c
           )
         );
-      } catch (err) {
-        console.error('AI chat error:', err);
-      } finally {
+
         setTypingMap((prev) => ({ ...prev, [activeContactId]: false }));
       }
     } else {
