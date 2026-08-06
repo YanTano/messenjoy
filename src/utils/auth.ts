@@ -1,4 +1,5 @@
 import { UserStatus } from '../types';
+import { syncUserToFirestore } from './firestoreService';
 
 export interface UserAccount {
   id: string;
@@ -108,6 +109,7 @@ export function registerUser(data: {
   const updated = [...accounts, newUser];
   saveRegisteredAccounts(updated);
   setCurrentSessionUser(newUser.id);
+  syncUserToFirestore(newUser);
 
   return { success: true, user: newUser };
 }
@@ -129,6 +131,7 @@ export function loginUser(
   }
 
   setCurrentSessionUser(user.id);
+  syncUserToFirestore(user);
   return { success: true, user };
 }
 
