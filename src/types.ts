@@ -24,6 +24,7 @@ export interface Message {
   senderAvatar?: string;
   text: string;
   timestamp: string; // ISO or formatted
+  createdAt?: number;
   isUser: boolean;
   status: 'sending' | 'sent' | 'delivered' | 'read';
   replyToId?: string;
